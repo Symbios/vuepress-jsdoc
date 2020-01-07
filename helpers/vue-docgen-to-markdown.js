@@ -1,3 +1,4 @@
+const chalk = require('chalk');
 const vueDocs = require('vue-docgen-api');
 
 function paramsString(params) {
@@ -5,7 +6,7 @@ function paramsString(params) {
 }
 
 function generateTags({ tags }) {
-  if (tags) {
+  if (tags && Object.keys(tags).length) {
     let tagsContent = '::: tip Tags\n';
 
     tagsContent += Object.keys(tags)
@@ -33,39 +34,75 @@ function fileContent() {
   };
 }
 
+function camelToSnake(string) {
+    return string.replace(/[\w]([A-Z])/g, function(m) {
+        return m[0] + "-" + m[1];
+    }).toLowerCase();
+}
+
 module.exports = async path => {
+  const errors = [];
   const file = fileContent();
 
   try {
-    const data = await vueDocs.parse(path);
+    const data = await vueDocs.parse(path, {
+        alias: {
+            '~': __dirname + '/../../../../app/',
+        },
+    });
 
     file.addline(`# ${data.displayName}\n${data.description}\n`);
 
     // Tags
     file.addline(generateTags(data));
 
-    file.addline('## Table of contents\n[[toc]]\n');
+    if (data.methods && data.methods.length || data.events && data.events.length) {
+        file.addline('[[toc]]\n');
+    }
+
+    // Example
+    let exampleContent = '## Example\n\n';
+    exampleContent += `<pre><code>&lt;${data.displayName}`;
 
     // Props
+    let propsContent = '## Props\n\n';
     if (data.props) {
       const props = data.props;
-      let propsContent = '## Props\n\n';
+      propsContent += '|Name|Description|Type|Default|\n|:-|:-|:-|:-|\n';
 
       props.forEach(prop => {
-        propsContent += `### ${prop.name} (\`${prop.type.name}\`)\n`;
+        prop.type.name = prop.type.name.replace('|', ', ');
 
-        // Tags
-        propsContent += generateTags(prop);
+        propsContent += `|${prop.name}|${prop.description}|${prop.type.name}|`;
+        exampleContent += '\n&nbsp;&nbsp;&nbsp;&nbsp;';
+        if (prop.type.name !== 'string') {
+            exampleContent += ':';
+        }
+        exampleContent += `${camelToSnake(prop.name)}="`;
 
-        propsContent += '\n\n|type|default|description|\n|:-|:-|:-|:-|\n';
-        propsContent += `|\`${prop.type.name}\`|${prop.defaultValue ? prop.defaultValue.value : '-'}|${
-          prop.description
-        }`;
+        if (prop.defaultValue && prop.defaultValue.value.startsWith('function')) {
+          const returnValue = prop.defaultValue.value.split('return ')[1].split(';')[0];
+          propsContent += returnValue;
+          exampleContent += returnValue;
+        } else {
+          propsContent += `${prop.defaultValue ? prop.defaultValue.value.replace(/\n/g, '') : '-'}`;
+          if (prop.defaultValue && prop.defaultValue.value !== 'null') {
+            exampleContent += prop.defaultValue.value;
+          }
+        }
 
-        propsContent += '|\n';
+        exampleContent += '"';
+
+        propsContent += `|\n`;
       });
+    }
 
-      file.addline(propsContent + '\n');
+    exampleContent += '\n/&gt;</code></pre>';
+
+    file.addline(exampleContent);
+
+    if (data.props) {
+        file.addline(propsContent + '\n');
     }
 
     //Methods
@@ -74,14 +111,20 @@ module.exports = async path => {
       file.addline('## Methods\n');
 
       methods.forEach(method => {
-        file.addline(
-          `### ${method.name} (${paramsString(method.params)}) -> \`${method.returns.type.name}\`\n ${
-            method.description
-          }\n`
-        );
+        let line = `### ${method.name} `;
+        if (method.params) {
+            line += `(${paramsString(method.params)})`;
+        }
+        if (!method.returns) {
+          errors.push(`Missing method return type for ${method.name} in ${data.displayName}`);
+        } else {
+          line += ` -> ${method.returns.type.name}\n `;
+        }
+        line += `${
+          method.description
+        }\n`;
 
-        // Tags
-        file.addline(generateTags(method));
+        file.addline(line);
 
         // params
         if (method.params) {
@@ -92,7 +135,9 @@ module.exports = async path => {
         }
 
         // returns
-        file.addline(`\n#### returns (${method.returns.type.name})\n ${method.returns.description}`);
+        if (method.returns) {
+          file.addline(`\n#### returns (${method.returns.type.name})\n ${method.returns.description}`);
+        }
       });
     }
 
@@ -108,19 +153,26 @@ module.exports = async path => {
     if (data.events) {
       const events = data.events;
       let eventsContent = '## Events\n\n';
+      eventsContent += '|Name|Description|Type|\n|:-|:-|:-|\n';
 
       events.forEach(event => {
-        eventsContent += `### ${event.name} (${event.type.names.join(',')})\n\n${event.description}\n`;
-
-        // properties
-        if (event.properties) {
-          eventsContent += `#### Properties\n| name | type | description\n|:-|:-|:-|\n${event.properties
-            .map(property => `|${property.name}|\`${property.type.names.join(',')}\`|${property.description}`)
-            .join('\n')}`;
+        eventsContent += `|${event.name}|${event.description}|`;
+        if (!event.type) {
+          errors.push(`Missing event type for ${event.name} in ${data.displayName}`);
+          eventsContent += '|';
+        } else {
+          eventsContent += `${event.type.names.join(',')}|`;
         }
       });
 
       file.addline(eventsContent + '\n\n');
+    }
+
+    // Errors
+    if (errors.length) {
+      errors.forEach((error) => {
+        console.error(chalk.black.bgRed('error'), error);
+      });
     }
 
     return Promise.resolve(file.content);
