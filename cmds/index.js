@@ -29,6 +29,7 @@ async function generate(argv) {
   const title = argv.title;
   const readme = argv.readme;
   const rmPattern = argv.rmPattern || [];
+  const componentDir = `${argv.dist}/.vuepress/components`;
 
   // remove docs folder, except README.md
   const deletedPaths = await del([docsFolder + '/**/*', `!${docsFolder}/README.md`, ...rmPattern]);
@@ -43,6 +44,8 @@ async function generate(argv) {
     try {
       // get all files
       const files = await fs.readdir(folder);
+      // @todo revert this
+      // const files = ['comments/SiteLike.vue'];
       const completeFolderPath = folder.replace(srcFolder, '');
 
       // if this is not a subdir
@@ -56,7 +59,6 @@ async function generate(argv) {
       // iterate through all files in folder
       await asyncForEach(files, async file => {
         if (exclude && mm.contains(`${folder}/${file}`, exclude)) {
-          console.log(chalk.black.bgBlue('exclude'), `${folder}/${file}`);
           return;
         }
 
@@ -132,11 +134,12 @@ async function generate(argv) {
             if (mdFileData) {
               const { frontmatter, attributes } = parseVuepressComment(fileData);
 
-              console.log(chalk.black.bgGreen('write file'), `${folder}/${file} -> ${folderPath}/${fileName}.md`);
+              console.log(chalk.black.bgGreen('write file'), `${fileName}.md`);
 
               let fileContent = '---\n';
 
               fileContent += !attributes || !attributes.title ? `title: ${fileName}` : '';
+              fileContent += `\nnext: false\nprev: false`;
 
               if (frontmatter) {
                 fileContent += !attributes || !attributes.title ? '\n' : '';
