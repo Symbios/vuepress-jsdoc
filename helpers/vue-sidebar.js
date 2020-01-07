@@ -22,16 +22,15 @@ module.exports = ({ fileTree, codeFolder, title }) => {
   }
 
   const tree = rootFolder.map(folder => ({
-    title: folder.name,
-    collapsable: false,
+    title: folder.name.charAt(0).toUpperCase() + folder.name.slice(1),
+    collapsable: true,
     children: buildChildren(folder.children, folder.name, 0)
   }));
 
   return {
     [`/${codeFolder}/`]: [
       {
-        title,
-        collapsable: false,
+        collapsable: false,  
         children: rootFiles
       }
     ].concat(tree)
